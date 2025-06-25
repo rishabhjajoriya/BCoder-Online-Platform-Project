@@ -53,28 +53,36 @@ const CourseDetail = () => {
 
     setEnrolling(true);
     try {
-      // Create enrollment
-      const enrollmentResponse = await enrollmentsAPI.createEnrollment({
-        courseId: id,
-        userId: user._id
-      });
-
-      if (enrollmentResponse.data.success) {
-        // Create payment order
-        const paymentResponse = await paymentsAPI.createOrder({
+      // Different enrollment flow based on user role
+      if (user.role === 'admin' || user.role === 'instructor') {
+        // For admins and instructors, use simple enrollment (no payment)
+        const response = await enrollmentsAPI.simpleEnroll(id);
+        if (response.data.success) {
+          toast.success('Enrollment successful!');
+          setIsEnrolled(true);
+          navigate('/dashboard');
+        } else {
+          toast.error('Enrollment failed. Please try again.');
+        }
+      } else {
+        // For students, use payment flow
+        const orderResponse = await paymentsAPI.createOrder({
           courseId: id,
-          enrollmentId: enrollmentResponse.data.enrollment._id,
           amount: course.price
         });
 
-        if (paymentResponse.data.success) {
-          // Redirect to payment page
-          navigate(`/pay/${paymentResponse.data.orderId}`);
+        if (orderResponse.data.orderId) {
+          // Redirect to payment page with order details
+          navigate(`/pay/${orderResponse.data.orderId}`, {
+            state: {
+              courseId: id,
+              amount: course.price,
+              courseTitle: course.title
+            }
+          });
         } else {
           toast.error('Failed to create payment order');
         }
-      } else {
-        toast.error('Failed to enroll in course');
       }
     } catch (error) {
       console.error('Error enrolling:', error);
@@ -180,7 +188,11 @@ const CourseDetail = () => {
                     disabled={enrolling}
                     className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
-                    {enrolling ? 'Processing...' : 'Enroll Now'}
+                    {enrolling ? 'Processing...' : 
+                      user.role === 'admin' ? 'Enroll (Admin)' :
+                      user.role === 'instructor' ? 'Enroll (Instructor)' :
+                      'Enroll Now'
+                    }
                   </button>
                 )}
 

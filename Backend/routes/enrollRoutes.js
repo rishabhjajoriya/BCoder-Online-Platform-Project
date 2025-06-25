@@ -67,8 +67,14 @@ router.post('/', protect, async (req, res) => {
 router.get('/my-enrollments', protect, async (req, res) => {
   try {
     const enrollments = await Enrollment.find({ student: req.user._id })
-      .populate('course', 'title thumbnail price duration instructor')
-      .populate('course.instructor', 'name')
+      .populate({
+        path: 'course',
+        select: 'title thumbnail price duration instructor',
+        populate: {
+          path: 'instructor',
+          select: 'name email'
+        }
+      })
       .sort({ enrollmentDate: -1 });
     
     res.json(enrollments);
@@ -145,6 +151,64 @@ router.get('/:id', protect, async (req, res) => {
     res.json(enrollment);
   } catch (error) {
     console.error('Get enrollment error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @desc    Simple enrollment (for testing/demo purposes)
+// @route   POST /api/enrollments/simple
+// @access  Private
+router.post('/simple', protect, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    
+    // Check if already enrolled
+    const existingEnrollment = await Enrollment.findOne({
+      student: req.user._id,
+      course: courseId
+    });
+    
+    if (existingEnrollment) {
+      return res.status(400).json({ message: 'Already enrolled in this course' });
+    }
+    
+    // Create enrollment without payment (for demo/testing)
+    const enrollment = await Enrollment.create({
+      student: req.user._id,
+      course: courseId,
+      amount: course.price,
+      paymentStatus: 'completed',
+      paymentId: `demo_enrollment_${Date.now()}`
+    });
+    
+    // Update course enrolled students count
+    course.enrolledStudents += 1;
+    await course.save();
+    
+    // Update user's enrolled courses
+    await User.findByIdAndUpdate(req.user._id, {
+      $push: {
+        enrolledCourses: {
+          course: courseId,
+          enrolledAt: new Date(),
+          progress: 0
+        }
+      }
+    });
+    
+    res.status(201).json({
+      success: true,
+      message: 'Enrollment successful',
+      enrollment
+    });
+  } catch (error) {
+    console.error('Simple enrollment error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

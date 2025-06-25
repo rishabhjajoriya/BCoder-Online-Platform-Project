@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { paymentsAPI, coursesAPI } from '../api';
@@ -7,28 +7,31 @@ import { paymentsAPI, coursesAPI } from '../api';
 const PaymentPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
-  const [order, setOrder] = useState(null);
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchOrderDetails();
-  }, [orderId]);
+  // Get course details from location state or fetch from API
+  const courseId = location.state?.courseId;
+  const amount = location.state?.amount;
+  const courseTitle = location.state?.courseTitle;
 
-  const fetchOrderDetails = async () => {
+  useEffect(() => {
+    fetchCourseDetails();
+  }, [courseId]);
+
+  const fetchCourseDetails = async () => {
     try {
       setLoading(true);
-      const orderResponse = await paymentsAPI.getOrder(orderId);
-      setOrder(orderResponse.data);
-
-      // Fetch course details
-      const courseResponse = await coursesAPI.getById(orderResponse.data.courseId);
-      setCourse(courseResponse.data);
+      if (courseId) {
+        const courseResponse = await coursesAPI.getById(courseId);
+        setCourse(courseResponse.data);
+      }
     } catch (error) {
-      console.error('Error fetching order details:', error);
-      toast.error('Failed to load order details');
+      console.error('Error fetching course details:', error);
+      toast.error('Failed to load course details');
     } finally {
       setLoading(false);
     }
@@ -43,61 +46,26 @@ const PaymentPage = () => {
 
     setProcessing(true);
     try {
-      // Initialize Razorpay payment
-      const response = await paymentsAPI.initializePayment({
-        orderId: orderId,
-        amount: order.amount,
-        currency: 'INR',
-        userEmail: user.email,
-        userName: user.name
-      });
+      // Mock payment verification - simulate successful payment
+      const mockPaymentData = {
+        razorpay_order_id: orderId,
+        razorpay_payment_id: `pay_${Date.now()}`,
+        razorpay_signature: 'mock_signature_for_demo',
+        courseId: courseId,
+        amount: amount
+      };
 
-      if (response.data.success) {
-        const options = {
-          key: response.data.key_id, // Your Razorpay Key ID
-          amount: response.data.amount,
-          currency: response.data.currency,
-          name: 'BCoder',
-          description: `Payment for ${course.title}`,
-          order_id: response.data.razorpay_order_id,
-          handler: async (response) => {
-            // Payment successful
-            try {
-              const verifyResponse = await paymentsAPI.verifyPayment({
-                orderId: orderId,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature
-              });
+      const verifyResponse = await paymentsAPI.verifyPayment(mockPaymentData);
 
-              if (verifyResponse.data.success) {
-                toast.success('Payment successful! You can now access the course.');
-                navigate('/dashboard');
-              } else {
-                toast.error('Payment verification failed');
-              }
-            } catch (error) {
-              console.error('Payment verification error:', error);
-              toast.error('Payment verification failed');
-            }
-          },
-          prefill: {
-            name: user.name,
-            email: user.email
-          },
-          theme: {
-            color: '#3B82F6'
-          }
-        };
-
-        const rzp = new window.Razorpay(options);
-        rzp.open();
+      if (verifyResponse.data.success) {
+        toast.success('Payment successful! You can now access the course.');
+        navigate('/dashboard');
       } else {
-        toast.error('Failed to initialize payment');
+        toast.error('Payment verification failed');
       }
     } catch (error) {
-      console.error('Payment initialization error:', error);
-      toast.error('Payment initialization failed');
+      console.error('Payment verification error:', error);
+      toast.error('Payment verification failed');
     } finally {
       setProcessing(false);
     }
@@ -118,7 +86,7 @@ const PaymentPage = () => {
     );
   }
 
-  if (!order || !course) {
+  if (!course) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -147,14 +115,14 @@ const PaymentPage = () => {
               {/* Course Details */}
               <div className="flex items-start space-x-4">
                 <img 
-                  src={course.image} 
-                  alt={course.title}
+                  src={course?.image || '/placeholder-course.jpg'} 
+                  alt={course?.title || courseTitle}
                   className="w-20 h-16 object-cover rounded-lg"
                 />
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{course.title}</h3>
-                  <p className="text-sm text-gray-600">{course.instructor}</p>
-                  <p className="text-sm text-gray-600">{course.duration}</p>
+                  <h3 className="font-semibold text-gray-900">{course?.title || courseTitle}</h3>
+                  <p className="text-sm text-gray-600">{course?.instructor?.name || 'Instructor'}</p>
+                  <p className="text-sm text-gray-600">{course?.duration || 'Duration'}</p>
                 </div>
               </div>
 
@@ -166,7 +134,7 @@ const PaymentPage = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Course Price:</span>
-                  <span className="font-semibold">${course.price}</span>
+                  <span className="font-semibold">${amount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Tax:</span>
@@ -174,7 +142,7 @@ const PaymentPage = () => {
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-lg font-semibold text-gray-900">Total:</span>
-                  <span className="text-lg font-bold text-blue-600">${order.amount}</span>
+                  <span className="text-lg font-bold text-blue-600">${amount}</span>
                 </div>
               </div>
             </div>
@@ -221,7 +189,7 @@ const PaymentPage = () => {
                   disabled={processing}
                   className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
                 >
-                  {processing ? 'Processing...' : `Pay $${order.amount}`}
+                  {processing ? 'Processing...' : `Pay $${amount}`}
                 </button>
                 
                 <button
@@ -251,7 +219,7 @@ const PaymentPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center space-x-3">
               <span className="text-blue-500 text-xl">📹</span>
-              <span className="text-gray-700">{course.duration} of video content</span>
+              <span className="text-gray-700">{course?.duration || 'Course duration'} of video content</span>
             </div>
             <div className="flex items-center space-x-3">
               <span className="text-blue-500 text-xl">📄</span>

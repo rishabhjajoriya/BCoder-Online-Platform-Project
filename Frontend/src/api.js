@@ -61,6 +61,7 @@ export const enrollmentsAPI = {
   getMyEnrollments: () => api.get('/enrollments/my-enrollments'),
   getUserEnrollments: () => api.get('/enrollments/my-enrollments'),
   createEnrollment: (enrollmentData) => api.post('/enrollments', enrollmentData),
+  simpleEnroll: (courseId) => api.post('/enrollments/simple', { courseId }),
   updateProgress: (id, progress) => api.put(`/enrollments/${id}/progress`, { progress }),
   getById: (id) => api.get(`/enrollments/${id}`),
 };
