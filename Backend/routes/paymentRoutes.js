@@ -1,154 +1,212 @@
 const express = require('express');
-const Razorpay = require('razorpay');
-const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
 const Enrollment = require('../models/Enrollment.js');
 const Course = require('../models/Course.js');
 const User = require('../models/User.js');
 const generateCertificate = require('../utils/pdfGenerator.js');
 const sendEmail = require('../utils/sendEmail.js');
-const { createOrder, verifyPayment, getOrder, initializePayment } = require('../utils/razorpay');
+const { createOrder, verifyPayment, getOrder } = require('../utils/razorpay');
 
 const router = express.Router();
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_key',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || 'test_secret'
-});
-
-// @desc    Create payment order
+// @desc    Create payment order (Demo Mode)
 // @route   POST /api/payments/create-order
 // @access  Private
 router.post('/create-order', protect, async (req, res) => {
   try {
     const { courseId, amount } = req.body;
     
-    // Check if course exists
-    const course = await Course.findById(courseId);
-    if (!course) {
-      return res.status(404).json({ message: 'Course not found' });
-    }
+    console.log('Create order request:', { courseId, amount, userId: req.user.id });
     
-    // Check if already enrolled
-    const existingEnrollment = await Enrollment.findOne({
-      student: req.user._id,
-      course: courseId
-    });
-    
-    if (existingEnrollment) {
-      return res.status(400).json({ message: 'Already enrolled in this course' });
-    }
-    
-    // Create mock order for demo/teaching purposes
-    const mockOrder = {
-      id: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      amount: amount * 100, // Convert to paise for consistency
-      currency: 'INR',
-      receipt: `receipt_${Date.now()}`,
-      notes: {
-        courseId: courseId,
-        studentId: req.user._id.toString(),
-        courseTitle: course.title
-      }
-    };
-    
-    res.json({
-      orderId: mockOrder.id,
-      amount: mockOrder.amount,
-      currency: mockOrder.currency,
-      success: true
-    });
-  } catch (error) {
-    console.error('Create order error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// @desc    Verify payment
-// @route   POST /api/payments/verify
-// @access  Private
-router.post('/verify', protect, async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, amount } = req.body;
-    
-    // For demo/teaching purposes, allow mock payments for all user types
-    const isMockPayment = razorpay_signature === 'mock_signature_for_demo';
-    
-    if (!isMockPayment) {
-      // Verify signature for real payments (if needed in future)
-      const body = razorpay_order_id + '|' + razorpay_payment_id;
-      const expectedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'test_secret')
-        .update(body.toString())
-        .digest('hex');
-      
-      if (expectedSignature !== razorpay_signature) {
-        return res.status(400).json({ message: 'Invalid payment signature' });
-      }
+    if (!courseId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Course ID is required' 
+      });
     }
     
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return res.status(404).json({ message: 'Course not found' });
+      console.log('Course not found for ID:', courseId);
+      return res.status(404).json({ success: false, message: 'Course not found' });
     }
     
-    // Check if already enrolled
+    // Check if user is already enrolled
     const existingEnrollment = await Enrollment.findOne({
-      student: req.user._id,
+      student: req.user.id,
       course: courseId
     });
     
     if (existingEnrollment) {
       return res.status(400).json({ 
-        success: false,
-        message: 'Already enrolled in this course' 
+        success: false, 
+        message: 'You are already enrolled in this course' 
+      });
+    }
+    
+    // Create mock order
+    const orderResult = await createOrder({
+      amount: amount || course.price,
+      currency: 'INR',
+      notes: { 
+        courseId: courseId,
+        courseTitle: course.title,
+        userId: req.user.id 
+      }
+    });
+    
+    if (!orderResult.success) {
+      console.error('Order creation failed:', orderResult.error);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Failed to create order',
+        error: orderResult.error
+      });
+    }
+    
+    // Return order details for demo payment
+    res.json({
+      success: true,
+      orderId: orderResult.order.id,
+      amount: orderResult.order.amount,
+      currency: orderResult.order.currency,
+      order: orderResult.order,
+      message: 'Demo order created successfully'
+    });
+    
+  } catch (error) {
+    console.error('Create order error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// @desc    Verify payment and create enrollment (Demo Mode)
+// @route   POST /api/payments/verify
+// @access  Private
+router.post('/verify', protect, async (req, res) => {
+  try {
+    const { 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature, 
+      courseId, 
+      amount 
+    } = req.body;
+    
+    // Verify payment (demo mode - always succeeds)
+    const verificationResult = await verifyPayment({
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      courseId,
+      amount
+    });
+    
+    if (!verificationResult.success) {
+      return res.status(400).json({ 
+        success: false, 
+        message: verificationResult.error || 'Payment verification failed' 
+      });
+    }
+    
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    
+    // Check if already enrolled
+    const existingEnrollment = await Enrollment.findOne({
+      student: req.user.id,
+      course: courseId
+    });
+    
+    if (existingEnrollment) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'You are already enrolled in this course' 
       });
     }
     
     // Create enrollment
-    const enrollment = await Enrollment.create({
-      student: req.user._id,
+    const enrollment = new Enrollment({
+      student: req.user.id,
       course: courseId,
       amount: amount,
-      paymentStatus: 'completed',
-      paymentId: razorpay_payment_id || `mock_payment_${Date.now()}`
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id,
+      status: 'completed',
+      enrolledAt: new Date()
     });
     
-    // Update course enrolled students count
-    await Course.findByIdAndUpdate(courseId, {
-      $inc: { enrolledStudents: 1 }
-    });
+    await enrollment.save();
     
-    // Update user's enrolled courses
-    await User.findByIdAndUpdate(req.user._id, {
-      $push: {
-        enrolledCourses: {
-          course: courseId,
-          enrolledAt: new Date(),
-          progress: 0
-        }
-      }
-    });
+    // Populate course and instructor details
+    await enrollment.populate([
+      { path: 'course', select: 'title description instructor' },
+      { path: 'course.instructor', select: 'name email' }
+    ]);
+    
+    // Send confirmation email (optional)
+    try {
+      await sendEmail({
+        to: req.user.email,
+        subject: `Enrollment Confirmation - ${course.title}`,
+        text: `Congratulations! You have successfully enrolled in ${course.title}.`
+      });
+    } catch (emailError) {
+      console.log('Email sending failed (optional):', emailError.message);
+    }
     
     res.json({
       success: true,
-      message: isMockPayment ? 'Mock payment successful and enrollment created' : 'Payment verified and enrollment created',
-      enrollment: {
-        _id: enrollment._id,
-        course: courseId,
-        student: req.user._id,
-        amount: amount,
-        paymentStatus: 'completed',
-        enrollmentDate: enrollment.enrollmentDate
-      }
+      message: 'Demo payment successful! You can now access the course.',
+      enrollment: enrollment
     });
+    
   } catch (error) {
-    console.error('Verify payment error:', error);
+    console.error('Payment verification error:', error);
     res.status(500).json({ 
-      success: false,
-      message: 'Server error during payment verification' 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// @desc    Get order details by order ID (Demo Mode)
+// @route   GET /api/payments/order/:orderId
+// @access  Private
+router.get('/order/:orderId', protect, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    console.log('Get order request for orderId:', orderId);
+    
+    // Get order from mock system
+    const orderResult = await getOrder(orderId);
+    
+    if (!orderResult.success) {
+      console.error('Failed to get order:', orderResult.error);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Order not found' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      order: orderResult.order
+    });
+    
+  } catch (error) {
+    console.error('Get order error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
     });
   }
 });
@@ -158,17 +216,21 @@ router.post('/verify', protect, async (req, res) => {
 // @access  Private
 router.get('/history', protect, async (req, res) => {
   try {
-    const payments = await Enrollment.find({ 
-      student: req.user._id,
-      paymentStatus: 'completed'
-    })
-    .populate('course', 'title thumbnail')
-    .sort({ createdAt: -1 });
+    const enrollments = await Enrollment.find({ student: req.user.id })
+      .populate('course', 'title price')
+      .sort({ enrolledAt: -1 });
     
-    res.json(payments);
+    res.json({
+      success: true,
+      payments: enrollments
+    });
+    
   } catch (error) {
     console.error('Get payment history error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
   }
 });
 

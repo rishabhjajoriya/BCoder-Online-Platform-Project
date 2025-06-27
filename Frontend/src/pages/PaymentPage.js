@@ -1,78 +1,119 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { paymentsAPI, coursesAPI } from '../api';
+import { paymentsAPI } from '../api';
+import { toast } from 'react-toastify';
+import { coursesAPI } from '../api';
 
 const PaymentPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  
   const [course, setCourse] = useState(null);
+  const [amount, setAmount] = useState(0);
+  const [courseTitle, setCourseTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-
-  // Get course details from location state or fetch from API
-  const courseId = location.state?.courseId;
-  const amount = location.state?.amount;
-  const courseTitle = location.state?.courseTitle;
+  const [showMockPayment, setShowMockPayment] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchCourseDetails();
-  }, [courseId]);
+    console.log('PaymentPage mounted with orderId:', orderId);
+    console.log('Auth state:', { isAuthenticated, authLoading, user });
+    
+    if (!authLoading && !isAuthenticated) {
+      console.log('User not authenticated, redirecting to login');
+      navigate('/login');
+      return;
+    }
+    
+    if (isAuthenticated && orderId) {
+      fetchOrderDetails();
+    }
+  }, [orderId, isAuthenticated, authLoading, navigate]);
 
-  const fetchCourseDetails = async () => {
+  const fetchOrderDetails = async () => {
     try {
+      console.log('Fetching order details for:', orderId);
       setLoading(true);
-      if (courseId) {
-        const courseResponse = await coursesAPI.getById(courseId);
-        setCourse(courseResponse.data);
+      setError(null);
+      
+      const response = await paymentsAPI.getOrder(orderId);
+      console.log('Order response:', response);
+      
+      if (response.data.success) {
+        const order = response.data.order;
+        setAmount(order.amount / 100); // Convert from paise to rupees
+        setCourseTitle(order.notes?.courseTitle || 'Course');
+        
+        // Get courseId from order notes or courseId field
+        const courseId = order.notes?.courseId || order.courseId;
+        
+        if (courseId) {
+          console.log('Fetching course details for courseId:', courseId);
+          try {
+            const courseResponse = await coursesAPI.getById(courseId);
+            if (courseResponse.data) {
+              setCourse(courseResponse.data);
+              setCourseTitle(courseResponse.data.title);
+            }
+          } catch (courseError) {
+            console.error('Error fetching course details:', courseError);
+            // Set basic course info from order
+            setCourse({ 
+              _id: courseId, 
+              id: courseId,
+              title: courseTitle || 'Course' 
+            });
+          }
+        }
+      } else {
+        setError('Failed to fetch order details');
+        toast.error('Failed to fetch order details');
+        navigate('/dashboard');
       }
     } catch (error) {
-      console.error('Error fetching course details:', error);
-      toast.error('Failed to load course details');
+      console.error('Error fetching order details:', error);
+      setError(error.message || 'Failed to fetch order details');
+      toast.error('Failed to fetch order details');
+      navigate('/dashboard');
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePayment = async () => {
-    if (!user) {
-      toast.error('Please log in to complete payment');
-      navigate('/login');
-      return;
-    }
-
-    setProcessing(true);
+  const handleDemoPayment = async () => {
     try {
-      // Mock payment verification - simulate successful payment
-      const mockPaymentData = {
+      setProcessing(true);
+      setShowMockPayment(false);
+      
+      // Create demo payment response
+      const demoPaymentResponse = {
         razorpay_order_id: orderId,
-        razorpay_payment_id: `pay_${Date.now()}`,
-        razorpay_signature: 'mock_signature_for_demo',
-        courseId: courseId,
+        razorpay_payment_id: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        razorpay_signature: 'demo_signature_for_teaching_purposes',
+        courseId: course?._id || course?.id, // Try both _id and id
         amount: amount
       };
-
-      const verifyResponse = await paymentsAPI.verifyPayment(mockPaymentData);
-
+      
+      console.log('Demo payment data:', demoPaymentResponse);
+      
+      // Verify payment
+      const verifyResponse = await paymentsAPI.verifyPayment(demoPaymentResponse);
+      
       if (verifyResponse.data.success) {
-        toast.success('Payment successful! You can now access the course.');
+        toast.success('Demo payment successful! You can now access the course.');
         navigate('/dashboard');
       } else {
-        toast.error('Payment verification failed');
+        toast.error(verifyResponse.data.message || 'Payment verification failed');
       }
     } catch (error) {
-      console.error('Payment verification error:', error);
-      toast.error('Payment verification failed');
+      console.error('Payment error:', error);
+      toast.error('Payment failed. Please try again.');
     } finally {
       setProcessing(false);
     }
-  };
-
-  const handleCancelPayment = () => {
-    navigate('/dashboard');
   };
 
   if (loading) {
@@ -86,12 +127,39 @@ const PaymentPage = () => {
     );
   }
 
-  if (!course) {
+  if (!orderId) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Order Not Found</h2>
-          <p className="text-gray-600">The order you're looking for doesn't exist.</p>
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded-lg">
+            <h2 className="text-lg font-semibold mb-2">Invalid Payment Link</h2>
+            <p className="text-sm">No order ID found. Please try enrolling in the course again.</p>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
+            <h2 className="text-lg font-semibold mb-2">Payment Error</h2>
+            <p className="text-sm">{error}</p>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="mt-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm"
+            >
+              Go to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -99,148 +167,114 @@ const PaymentPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Complete Your Purchase</h1>
-          <p className="text-gray-600">Secure payment powered by Razorpay</p>
-        </div>
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+            <h1 className="text-2xl font-bold text-white">Complete Your Enrollment</h1>
+            <p className="text-blue-100 mt-1">Demo payment for teaching purposes</p>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Order Summary */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Order Summary</h2>
-            
-            <div className="space-y-4">
-              {/* Course Details */}
-              <div className="flex items-start space-x-4">
-                <img 
-                  src={course?.image || '/placeholder-course.jpg'} 
-                  alt={course?.title || courseTitle}
-                  className="w-20 h-16 object-cover rounded-lg"
-                />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{course?.title || courseTitle}</h3>
-                  <p className="text-sm text-gray-600">{course?.instructor?.name || 'Instructor'}</p>
-                  <p className="text-sm text-gray-600">{course?.duration || 'Duration'}</p>
-                </div>
+          {/* Course Details */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex items-center space-x-4">
+              <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
               </div>
-
-              {/* Order Details */}
-              <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Order ID:</span>
-                  <span className="font-mono text-sm">{orderId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Course Price:</span>
-                  <span className="font-semibold">${amount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Tax:</span>
-                  <span className="font-semibold">$0.00</span>
-                </div>
-                <div className="flex justify-between border-t pt-2">
-                  <span className="text-lg font-semibold text-gray-900">Total:</span>
-                  <span className="text-lg font-bold text-blue-600">${amount}</span>
-                </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900">{course?.title || courseTitle}</h3>
+                <p className="text-sm text-gray-600">{course?.instructor?.name || 'Instructor'}</p>
+                <p className="text-sm text-gray-600">{course?.duration || 'Duration'}</p>
               </div>
             </div>
           </div>
 
-          {/* Payment Section */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Payment Details</h2>
-            
-            <div className="space-y-6">
-              {/* Payment Methods */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Payment Method</h3>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                      <span className="text-white text-sm font-bold">R</span>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Razorpay</p>
-                      <p className="text-sm text-gray-600">Secure payment gateway</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {/* Payment Amount */}
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-medium text-gray-900">Total Amount</span>
+              <span className="text-2xl font-bold text-blue-600">₹{amount}</span>
+            </div>
+          </div>
 
-              {/* Security Info */}
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                  <span className="text-green-500 text-xl">🔒</span>
-                  <div>
-                    <h4 className="font-semibold text-green-900">Secure Payment</h4>
-                    <p className="text-sm text-green-700">
-                      Your payment information is encrypted and secure. We use industry-standard SSL encryption.
-                    </p>
-                  </div>
+          {/* Demo Payment Section */}
+          <div className="p-6">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
-              </div>
-
-              {/* Payment Buttons */}
-              <div className="space-y-3">
-                <button
-                  onClick={handlePayment}
-                  disabled={processing}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  {processing ? 'Processing...' : `Pay $${amount}`}
-                </button>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Demo Payment Mode</h3>
+                <p className="text-gray-600 mb-6">
+                  This is a demonstration payment system for teaching purposes. 
+                  No real charges will be made to your account.
+                </p>
                 
                 <button
-                  onClick={handleCancelPayment}
-                  className="w-full bg-gray-200 text-gray-700 py-3 px-4 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                  onClick={() => setShowMockPayment(true)}
+                  disabled={processing}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-medium transition-colors text-lg"
                 >
-                  Cancel Payment
+                  {processing ? 'Processing...' : 'Complete Demo Payment'}
                 </button>
-              </div>
-
-              {/* Money Back Guarantee */}
-              <div className="text-center">
-                <p className="text-sm text-gray-600">
-                  💰 30-Day Money-Back Guarantee
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Not satisfied? Get a full refund within 30 days
-                </p>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Features */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">What's Included</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">📹</span>
-              <span className="text-gray-700">{course?.duration || 'Course duration'} of video content</span>
+          {/* Demo Payment Modal */}
+          {showMockPayment && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Demo Payment Confirmation</h3>
+                <p className="text-gray-600 mb-6">
+                  This simulates a real payment flow for teaching purposes. No actual charges will be made.
+                </p>
+                
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex justify-between text-sm">
+                      <span>Course:</span>
+                      <span className="font-medium">{courseTitle}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-2">
+                      <span>Amount:</span>
+                      <span className="font-medium">₹{amount}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-2">
+                      <span>Payment Mode:</span>
+                      <span className="font-medium text-green-600">Demo</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setShowMockPayment(false)}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDemoPayment}
+                      disabled={processing}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium"
+                    >
+                      {processing ? 'Processing...' : 'Complete Payment'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">📄</span>
-              <span className="text-gray-700">Downloadable resources</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">🏆</span>
-              <span className="text-gray-700">Certificate of completion</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">♾️</span>
-              <span className="text-gray-700">Full lifetime access</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">📱</span>
-              <span className="text-gray-700">Access on mobile and TV</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-blue-500 text-xl">🔄</span>
-              <span className="text-gray-700">30-day money-back guarantee</span>
-            </div>
+          )}
+
+          {/* Footer */}
+          <div className="bg-gray-50 px-6 py-4">
+            <p className="text-sm text-gray-600 text-center">
+              This is a demo payment system for educational purposes only
+            </p>
           </div>
         </div>
       </div>

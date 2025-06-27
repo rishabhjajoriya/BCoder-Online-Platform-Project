@@ -19,7 +19,7 @@ router.post('/', protect, async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return res.status(404).json({ message: 'Course not found' });
+      return res.status(404).json({ success: false, message: 'Course not found' });
     }
     
     // Check if already enrolled
@@ -29,14 +29,16 @@ router.post('/', protect, async (req, res) => {
     });
     
     if (existingEnrollment) {
-      return res.status(400).json({ message: 'Already enrolled in this course' });
+      return res.status(400).json({ success: false, message: 'Already enrolled in this course' });
     }
     
-    // Create enrollment
+    // Create enrollment with proper amount
     const enrollment = await Enrollment.create({
       student: req.user._id,
       course: courseId,
-      amount
+      amount: amount || course.price, // Use provided amount or course price
+      status: 'completed',
+      enrolledAt: new Date()
     });
     
     // Update course enrolled students count
@@ -54,10 +56,14 @@ router.post('/', protect, async (req, res) => {
       }
     });
     
-    res.status(201).json(enrollment);
+    res.status(201).json({
+      success: true,
+      message: 'Enrollment successful!',
+      enrollment: enrollment
+    });
   } catch (error) {
     console.error('Enrollment error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
@@ -165,7 +171,7 @@ router.post('/simple', protect, async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return res.status(404).json({ message: 'Course not found' });
+      return res.status(404).json({ success: false, message: 'Course not found' });
     }
     
     // Check if already enrolled
@@ -175,7 +181,7 @@ router.post('/simple', protect, async (req, res) => {
     });
     
     if (existingEnrollment) {
-      return res.status(400).json({ message: 'Already enrolled in this course' });
+      return res.status(400).json({ success: false, message: 'Already enrolled in this course' });
     }
     
     // Create enrollment without payment (for demo/testing)
@@ -183,8 +189,9 @@ router.post('/simple', protect, async (req, res) => {
       student: req.user._id,
       course: courseId,
       amount: course.price,
-      paymentStatus: 'completed',
-      paymentId: `demo_enrollment_${Date.now()}`
+      status: 'completed',
+      paymentId: `demo_enrollment_${Date.now()}`,
+      enrolledAt: new Date()
     });
     
     // Update course enrolled students count
@@ -209,6 +216,28 @@ router.post('/simple', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('Simple enrollment error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// @desc    Check if user is enrolled in a course
+// @route   GET /api/enrollments/check/:courseId
+// @access  Private
+router.get('/check/:courseId', protect, async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    
+    const enrollment = await Enrollment.findOne({
+      student: req.user._id,
+      course: courseId
+    });
+    
+    res.json({
+      isEnrolled: !!enrollment,
+      enrollment: enrollment
+    });
+  } catch (error) {
+    console.error('Check enrollment error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

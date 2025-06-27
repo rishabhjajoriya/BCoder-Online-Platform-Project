@@ -62,6 +62,7 @@ export const enrollmentsAPI = {
   getUserEnrollments: () => api.get('/enrollments/my-enrollments'),
   createEnrollment: (enrollmentData) => api.post('/enrollments', enrollmentData),
   simpleEnroll: (courseId) => api.post('/enrollments/simple', { courseId }),
+  checkEnrollment: (courseId) => api.get(`/enrollments/check/${courseId}`),
   updateProgress: (id, progress) => api.put(`/enrollments/${id}/progress`, { progress }),
   getById: (id) => api.get(`/enrollments/${id}`),
 };
@@ -71,7 +72,6 @@ export const paymentsAPI = {
   createOrder: (orderData) => api.post('/payments/create-order', orderData),
   verifyPayment: (paymentData) => api.post('/payments/verify', paymentData),
   getHistory: () => api.get('/payments/history'),
-  initializePayment: (paymentData) => api.post('/payments/initialize', paymentData),
   getOrder: (orderId) => api.get(`/payments/order/${orderId}`),
 };
 
