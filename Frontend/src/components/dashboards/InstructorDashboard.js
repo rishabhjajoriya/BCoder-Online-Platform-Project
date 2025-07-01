@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useSelector } from 'react-redux';
 import { coursesAPI, enrollmentsAPI } from '../../api';
 import { toast } from 'react-toastify';
 
 const InstructorDashboard = () => {
-  const { user } = useAuth();
+  const user = useSelector((state) => state.auth.user);
   const [myCourses, setMyCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);

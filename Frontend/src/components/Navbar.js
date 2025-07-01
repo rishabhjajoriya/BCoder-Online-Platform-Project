@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useSelector, useDispatch } from 'react-redux';
+import { logout } from '../slices/authSlice';
 
 export default function Navbar() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { user, isAuthenticated, loading } = useSelector(state => state.auth);
+  const dispatch = useDispatch();
 
   const handleLogout = () => {
-    logout();
+    dispatch(logout());
   };
 
   const getRoleBadge = (role) => {

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 import { quizzesAPI, certificatesAPI } from '../api';
 
 const QuizPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useSelector(state => state.auth);
   const [quiz, setQuiz] = useState(null);
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);

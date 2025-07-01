@@ -1,6 +1,8 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+// import { AuthProvider } from './context/AuthContext';
+import { Provider } from 'react-redux';
+import store from './store';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import DemoButton from './components/DemoButton';
@@ -15,7 +17,7 @@ import PaymentPage from './pages/PaymentPage';
 
 export default function App() {
   return (
-    <AuthProvider>
+    <Provider store={store}>
       <div className="App">
         <Navbar />
         <Routes>
@@ -65,6 +67,6 @@ export default function App() {
         </Routes>
         <DemoButton />
       </div>
-    </AuthProvider>
+    </Provider>
   );
 }

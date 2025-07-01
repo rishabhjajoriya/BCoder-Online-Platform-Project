@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 import { paymentsAPI } from '../api';
 import { toast } from 'react-toastify';
 import { coursesAPI } from '../api';
@@ -8,7 +8,7 @@ import { coursesAPI } from '../api';
 const PaymentPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useSelector(state => state.auth);
   
   const [course, setCourse] = useState(null);
   const [amount, setAmount] = useState(0);

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 import { coursesAPI, enrollmentsAPI, paymentsAPI } from '../api';
 
 const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useSelector(state => state.auth);
   
   const [course, setCourse] = useState(null);
   const [isEnrolled, setIsEnrolled] = useState(false);

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { coursesAPI } from '../api';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 import CourseCard from '../components/CourseCard';
 import SearchBar from '../components/SearchBar';
 import FilterDropdown from '../components/FilterDropdown';
 
 const HomePage = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useSelector(state => state.auth);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,7 +30,13 @@ const HomePage = () => {
       setCourses(response.data);
     } catch (error) {
       console.error('Error fetching courses:', error);
-      toast.error('Failed to load courses');
+      if (error.response) {
+        toast.error(`Failed to load courses: ${error.response.data?.message || 'Server error'}`);
+      } else if (error.request) {
+        toast.error('Failed to load courses: Network error - please check your connection');
+      } else {
+        toast.error('Failed to load courses: Unexpected error');
+      }
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { register } from '../slices/authSlice';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -10,9 +11,9 @@ const Register = () => {
     password: '',
     confirmPassword: ''
   });
-  const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
+  const { loading, error } = useSelector(state => state.auth);
 
   const handleChange = (e) => {
     setFormData({
@@ -23,32 +24,24 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       toast.error('Passwords do not match');
       return;
     }
-
     if (formData.password.length < 6) {
       toast.error('Password must be at least 6 characters long');
       return;
     }
-
-    setLoading(true);
-
     try {
-      const result = await register(formData);
-      if (result.success) {
+      const resultAction = await dispatch(register(formData));
+      if (register.fulfilled.match(resultAction)) {
         toast.success('Registration successful! Please log in.');
         navigate('/login');
       } else {
-        toast.error(result.message);
+        toast.error(resultAction.payload || 'Registration failed');
       }
     } catch (error) {
       toast.error('Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -133,16 +126,16 @@ const Register = () => {
               />
             </div>
           </div>
-
           <div>
             <button
               type="submit"
               disabled={loading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              {loading ? 'Creating account...' : 'Create account'}
+              {loading ? 'Registering...' : 'Register'}
             </button>
           </div>
+          {error && <div className="text-red-500 text-sm text-center">{error}</div>}
         </form>
       </div>
     </div>

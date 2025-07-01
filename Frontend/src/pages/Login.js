@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { login } from '../slices/authSlice';
 
 const Login = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
+  const { loading, error, isAuthenticated } = useSelector(state => state.auth);
 
   const handleChange = (e) => {
     setFormData({
@@ -21,20 +22,16 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-
     try {
-      const result = await login(formData);
-      if (result.success) {
+      const resultAction = await dispatch(login(formData));
+      if (login.fulfilled.match(resultAction)) {
         toast.success('Login successful!');
         navigate('/dashboard');
       } else {
-        toast.error(result.message);
+        toast.error(resultAction.payload || 'Login failed');
       }
     } catch (error) {
       toast.error('Login failed. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -97,6 +94,7 @@ const Login = () => {
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
+          {error && <div className="text-red-500 text-sm text-center">{error}</div>}
         </form>
       </div>
     </div>

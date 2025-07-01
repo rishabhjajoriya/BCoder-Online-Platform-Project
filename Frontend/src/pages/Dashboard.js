@@ -1,11 +1,12 @@
 import React from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 import StudentDashboard from '../components/dashboards/StudentDashboard';
 import InstructorDashboard from '../components/dashboards/InstructorDashboard';
 import AdminDashboard from '../components/dashboards/AdminDashboard';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  // const { user } = useAuth();
+  const user = useSelector((state) => state.auth.user);
 
   // Render different dashboard based on user role
   const renderDashboard = () => {
