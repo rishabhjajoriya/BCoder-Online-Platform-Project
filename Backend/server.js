@@ -72,7 +72,7 @@ app.use((err, req, res, next) => {
 const initializeApp = async () => {
   try {
     // Wait for MongoDB connection
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 2000)); //fallback introduction 
     
     // Populate sample data
     console.log('🌱 Auto-populating sample data on startup...');

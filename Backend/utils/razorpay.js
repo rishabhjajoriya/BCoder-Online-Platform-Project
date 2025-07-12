@@ -23,6 +23,9 @@ const createOrder = async ({ amount, currency = 'INR', receipt, notes }) => {
       notes: order.notes
     });
     
+    // Store the order in mock storage
+    mockOrders.set(orderId, order);
+    
     console.log('Mock Razorpay order created successfully:', order);
     
     return { success: true, order };
@@ -32,19 +35,27 @@ const createOrder = async ({ amount, currency = 'INR', receipt, notes }) => {
   }
 };
 
+// Mock storage for orders (in a real app, this would be a database)
+const mockOrders = new Map();
+
 // Get order details (mock)
 const getOrder = async (orderId) => {
   try {
-    // For demo purposes, return a mock order
+    // Check if we have the order in our mock storage
+    if (mockOrders.has(orderId)) {
+      return { success: true, order: mockOrders.get(orderId) };
+    }
+    
+    // For demo purposes, return a mock order if not found
     const order = {
       id: orderId,
       amount: 99900, // Default amount in paise
       currency: 'INR',
       status: 'created',
       notes: {
-        courseId: 'mock_course_id',
+        courseId: 'demo_course_id', // This will be replaced by actual course ID
         courseTitle: 'Demo Course',
-        userId: 'mock_user_id'
+        userId: 'demo_user_id'
       },
       created_at: Date.now()
     };
