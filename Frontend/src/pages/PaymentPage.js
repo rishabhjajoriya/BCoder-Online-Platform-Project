@@ -15,8 +15,8 @@ const PaymentPage = () => {
   const [courseTitle, setCourseTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [showMockPayment, setShowMockPayment] = useState(false);
   const [error, setError] = useState(null);
+  const [showDemoModal, setShowDemoModal] = useState(false);
 
   useEffect(() => {
     console.log('PaymentPage mounted with orderId:', orderId);
@@ -86,31 +86,84 @@ const PaymentPage = () => {
   const handleDemoPayment = async () => {
     try {
       setProcessing(true);
-      setShowMockPayment(false);
+      setShowDemoModal(true);
       
-      // Create demo payment response
-      const demoPaymentResponse = {
-        razorpay_order_id: orderId,
-        razorpay_payment_id: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        razorpay_signature: 'demo_signature_for_teaching_purposes',
-        courseId: course?._id || course?.id, // Try both _id and id
-        amount: amount
-      };
+      // Simulate payment processing delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      console.log('Demo payment data:', demoPaymentResponse);
-      
-      // Verify payment
-      const verifyResponse = await paymentsAPI.verifyPayment(demoPaymentResponse);
-      
-      if (verifyResponse.data.success) {
-        toast.success('Demo payment successful! You can now access the course.');
-        navigate('/dashboard');
-      } else {
-        toast.error(verifyResponse.data.message || 'Payment verification failed');
+      // Get the order details to ensure we have the correct course ID
+      const orderResponse = await paymentsAPI.getOrder(orderId);
+      if (!orderResponse.data.success) {
+        toast.error('Failed to get order details');
+        setProcessing(false);
+        setShowDemoModal(false);
+        return;
       }
+      
+      const order = orderResponse.data.order;
+      const courseId = order.notes?.courseId;
+      
+      if (!courseId) {
+        toast.error('Course ID not found in order');
+        setProcessing(false);
+        setShowDemoModal(false);
+        return;
+      }
+      
+      // Simulate successful payment with demo payment ID
+      const demoPaymentId = `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      console.log('Order details:', order);
+      console.log('Attempting payment verification with:', {
+        orderId,
+        courseId,
+        amount,
+        demoPaymentId
+      });
+      
+      // Verify payment with backend
+      const verifyResponse = await paymentsAPI.verifyPayment({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: demoPaymentId,
+        razorpay_signature: 'demo_signature_for_teaching',
+        courseId: courseId,
+        amount: amount
+      });
+      
+      console.log('Payment verification response:', verifyResponse);
+      
+      if (verifyResponse.data && verifyResponse.data.success) {
+        toast.success('Payment successful! You can now access the course.');
+        setShowDemoModal(false);
+        setTimeout(() => navigate('/dashboard'), 1000);
+      } else {
+        const errorMessage = verifyResponse.data?.message || 'Payment verification failed';
+        console.error('Payment verification failed:', errorMessage);
+        
+        // Check if user is already enrolled
+        if (errorMessage.includes('already enrolled')) {
+          toast.info('You are already enrolled in this course! Redirecting to dashboard...');
+          setShowDemoModal(false);
+          setTimeout(() => navigate('/dashboard'), 1500);
+        } else {
+          toast.error(errorMessage);
+          setShowDemoModal(false);
+        }
+      }
+      
     } catch (error) {
-      console.error('Payment error:', error);
-      toast.error('Payment failed. Please try again.');
+      console.error('Demo payment error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Payment failed';
+      
+      // Check if user is already enrolled
+      if (errorMessage.includes('already enrolled')) {
+        toast.info('You are already enrolled in this course! Redirecting to dashboard...');
+        setShowDemoModal(false);
+        setTimeout(() => navigate('/dashboard'), 1500);
+      } else {
+        toast.error(errorMessage);
+        setShowDemoModal(false);
+      }
     } finally {
       setProcessing(false);
     }
@@ -172,7 +225,7 @@ const PaymentPage = () => {
           {/* Header */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
             <h1 className="text-2xl font-bold text-white">Complete Your Enrollment</h1>
-            <p className="text-blue-100 mt-1">Demo payment for teaching purposes</p>
+            <p className="text-blue-100 mt-1">Choose your payment method</p>
           </div>
 
           {/* Course Details */}
@@ -199,85 +252,62 @@ const PaymentPage = () => {
             </div>
           </div>
 
-          {/* Demo Payment Section */}
+          {/* Payment Options */}
           <div className="p-6">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Demo Payment Mode</h3>
-                <p className="text-gray-600 mb-6">
-                  This is a demonstration payment system for teaching purposes. 
-                  No real charges will be made to your account.
-                </p>
-                
-                <button
-                  onClick={() => setShowMockPayment(true)}
-                  disabled={processing}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-medium transition-colors text-lg"
-                >
-                  {processing ? 'Processing...' : 'Complete Demo Payment'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Demo Payment Modal */}
-          {showMockPayment && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Demo Payment Confirmation</h3>
-                <p className="text-gray-600 mb-6">
-                  This simulates a real payment flow for teaching purposes. No actual charges will be made.
-                </p>
-                
-                <div className="space-y-4">
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="flex justify-between text-sm">
-                      <span>Course:</span>
-                      <span className="font-medium">{courseTitle}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-2">
-                      <span>Amount:</span>
-                      <span className="font-medium">₹{amount}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-2">
-                      <span>Payment Mode:</span>
-                      <span className="font-medium text-green-600">Demo</span>
-                    </div>
+            <div className="space-y-4">
+              {/* Demo Payment Option */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                   </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Teaching Demo Payment</h3>
+                  <p className="text-gray-600 mb-6">
+                    Simulated payment flow for teaching purposes. 
+                    This demonstrates the complete payment integration without real charges.
+                  </p>
                   
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => setShowMockPayment(false)}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleDemoPayment}
-                      disabled={processing}
-                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium"
-                    >
-                      {processing ? 'Processing...' : 'Complete Payment'}
-                    </button>
+                  <button
+                    onClick={handleDemoPayment}
+                    disabled={processing}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-medium transition-colors text-lg"
+                  >
+                    {processing ? 'Processing...' : 'Complete Demo Payment'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Info Box */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Teaching Demo Mode</p>
+                    <p>This is a simulated payment flow for educational purposes. In a real application, you would integrate with actual payment gateways like Razorpay, Stripe, or PayPal.</p>
                   </div>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Footer */}
-          <div className="bg-gray-50 px-6 py-4">
-            <p className="text-sm text-gray-600 text-center">
-              This is a demo payment system for educational purposes only
-            </p>
           </div>
         </div>
       </div>
+
+      {/* Demo Payment Modal */}
+      {showDemoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md mx-4">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing Payment</h3>
+              <p className="text-gray-600">Simulating payment verification...</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -5,11 +5,11 @@ const Course = require('../models/Course.js');
 const User = require('../models/User.js');
 const generateCertificate = require('../utils/pdfGenerator.js');
 const sendEmail = require('../utils/sendEmail.js');
-const { createOrder, verifyPayment, getOrder } = require('../utils/razorpay');
+const { createOrder, verifyPayment, getOrder, initializePayment } = require('../utils/razorpay');
 
 const router = express.Router();
 
-// @desc    Create payment order (Demo Mode)
+// @desc    Create payment order (Razorpay Sandbox)
 // @route   POST /api/payments/create-order
 // @access  Private
 router.post('/create-order', protect, async (req, res) => {
@@ -45,14 +45,16 @@ router.post('/create-order', protect, async (req, res) => {
       });
     }
     
-    // Create mock order
+    // Create real Razorpay order
     const orderResult = await createOrder({
       amount: amount || course.price,
       currency: 'INR',
+      receipt: `course_${courseId}_${Date.now()}`,
       notes: { 
         courseId: courseId,
         courseTitle: course.title,
-        userId: req.user.id 
+        userId: req.user.id,
+        type: 'course_enrollment'
       }
     });
     
@@ -65,14 +67,15 @@ router.post('/create-order', protect, async (req, res) => {
       });
     }
     
-    // Return order details for demo payment
+    // Return order details for Razorpay payment
     res.json({
       success: true,
       orderId: orderResult.order.id,
       amount: orderResult.order.amount,
       currency: orderResult.order.currency,
       order: orderResult.order,
-      message: 'Demo order created successfully'
+      razorpayKey: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID',
+      message: 'Razorpay order created successfully'
     });
     
   } catch (error) {
@@ -84,7 +87,7 @@ router.post('/create-order', protect, async (req, res) => {
   }
 });
 
-// @desc    Verify payment and create enrollment (Demo Mode)
+// @desc    Verify payment and create enrollment (Razorpay Sandbox)
 // @route   POST /api/payments/verify
 // @access  Private
 router.post('/verify', protect, async (req, res) => {
@@ -97,7 +100,14 @@ router.post('/verify', protect, async (req, res) => {
       amount 
     } = req.body;
     
-    // Verify payment (demo mode - always succeeds)
+    console.log('Payment verification request:', {
+      razorpay_order_id,
+      razorpay_payment_id,
+      courseId,
+      amount
+    });
+    
+    // Verify payment with real Razorpay signature
     const verificationResult = await verifyPayment({
       razorpay_order_id,
       razorpay_payment_id,
@@ -164,7 +174,7 @@ router.post('/verify', protect, async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Demo payment successful! You can now access the course.',
+      message: 'Payment successful! You can now access the course.',
       enrollment: enrollment
     });
     
@@ -177,7 +187,7 @@ router.post('/verify', protect, async (req, res) => {
   }
 });
 
-// @desc    Get order details by order ID (Demo Mode)
+// @desc    Get order details by order ID (Razorpay Sandbox)
 // @route   GET /api/payments/order/:orderId
 // @access  Private
 router.get('/order/:orderId', protect, async (req, res) => {
@@ -186,7 +196,7 @@ router.get('/order/:orderId', protect, async (req, res) => {
     
     console.log('Get order request for orderId:', orderId);
     
-    // Get order from mock system
+    // Get order from Razorpay
     const orderResult = await getOrder(orderId);
     
     if (!orderResult.success) {
@@ -204,6 +214,59 @@ router.get('/order/:orderId', protect, async (req, res) => {
     
   } catch (error) {
     console.error('Get order error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// @desc    Initialize payment with Razorpay options
+// @route   POST /api/payments/initialize
+// @access  Private
+router.post('/initialize', protect, async (req, res) => {
+  try {
+    const { courseId, amount } = req.body;
+    
+    if (!courseId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Course ID is required' 
+      });
+    }
+    
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    
+    // Initialize payment with Razorpay
+    const paymentResult = await initializePayment({
+      courseId,
+      amount: amount || course.price,
+      courseTitle: course.title
+    });
+    
+    if (!paymentResult.success) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Failed to initialize payment',
+        error: paymentResult.error
+      });
+    }
+    
+    res.json({
+      success: true,
+      orderId: paymentResult.orderId,
+      amount: paymentResult.amount,
+      currency: paymentResult.currency,
+      paymentOptions: paymentResult.paymentOptions,
+      message: 'Payment initialized successfully'
+    });
+    
+  } catch (error) {
+    console.error('Initialize payment error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 

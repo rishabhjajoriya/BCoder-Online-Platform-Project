@@ -74,6 +74,7 @@ export const paymentsAPI = {
   verifyPayment: (paymentData) => api.post('/payments/verify', paymentData),
   getHistory: () => api.get('/payments/history'),
   getOrder: (orderId) => api.get(`/payments/order/${orderId}`),
+  initialize: (paymentData) => api.post('/payments/initialize', paymentData),
 };
 
 // Quizzes API
